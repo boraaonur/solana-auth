@@ -9,7 +9,6 @@ import {
   HStack,
   Text,
   IconButton,
-  Box,
   Center,
   Image,
 } from "@chakra-ui/react";
@@ -19,8 +18,6 @@ import { Adapter } from "@solana/wallet-adapter-base";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useState } from "react";
 import { wallets } from "../lib/solana";
-
-// import * as wallets from "@solana/wallet-adapter-wallets";
 
 function CustomWalletModal() {
   const { isOpen, onOpen, onClose } = useDisclosure();
@@ -106,12 +103,5 @@ function WalletButton(props: {
     </Button>
   );
 }
-
-/*
-            <ModalHeader w="full">
-              Connect your wallet to cocktail.art
-            </ModalHeader>
-            <ModalCloseButton />
-            */
 
 export default CustomWalletModal;

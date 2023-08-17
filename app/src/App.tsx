@@ -14,9 +14,10 @@ import {
   Stepper,
   useSteps,
 } from "@chakra-ui/react";
-import { useEffect } from "react";
+import { MouseEventHandler, useEffect } from "react";
 import CustomWalletModal from "./components/WalletModal";
 import { auth } from "./lib/firebase";
+import { User } from "firebase/auth";
 
 const steps = [
   {
@@ -42,6 +43,13 @@ function App() {
     index: 0,
     count: steps.length,
   });
+
+  async function onAuthenticate() {
+    if (!wallet.publicKey || !wallet) {
+      throw Error("You must connect your wallet!");
+    }
+    authenticate(wallet);
+  }
 
   function resetProgress() {
     auth.signOut();
@@ -109,38 +117,14 @@ function App() {
             </HStack>
           </Stepper>
           <Box w="50%">
-            {activeStep === 0 && (
-              <VStack>
-                <CustomWalletModal />
-              </VStack>
-            )}
-
+            {activeStep === 0 && <ConnectWalletStep />}
             {activeStep === 1 && (
-              <VStack>
-                {authenticating ? (
-                  <p>Authenticating...</p>
-                ) : (
-                  <Button
-                    onClick={async () => {
-                      if (!wallet.publicKey || !wallet) {
-                        throw Error("You must connect your wallet!");
-                      }
-
-                      authenticate(wallet);
-                    }}
-                  >
-                    Sign nonce
-                  </Button>
-                )}
-              </VStack>
+              <SignNonceStep
+                authenticating={authenticating}
+                onAuthenticate={onAuthenticate}
+              />
             )}
-
-            {activeStep >= 2 && (
-              <VStack>
-                <p>You are logged in. This is the end of demo.</p>
-                <p>UID: {user?.uid}</p>
-              </VStack>
-            )}
+            {activeStep >= 2 && <VerificationStep user={user} />}
           </Box>
         </HStack>
       </Center>
@@ -148,35 +132,39 @@ function App() {
   );
 }
 
+function ConnectWalletStep() {
+  return (
+    <VStack>
+      <CustomWalletModal />
+    </VStack>
+  );
+}
+
+function SignNonceStep({
+  authenticating,
+  onAuthenticate,
+}: {
+  authenticating: boolean;
+  onAuthenticate: MouseEventHandler<HTMLButtonElement>;
+}) {
+  return (
+    <VStack>
+      {authenticating ? (
+        <p>Authenticating...</p>
+      ) : (
+        <Button onClick={onAuthenticate}>Sign nonce</Button>
+      )}
+    </VStack>
+  );
+}
+
+function VerificationStep({ user }: { user: User | null }) {
+  return (
+    <VStack>
+      <p>You are logged in. This is the end of the demo.</p>
+      <p>UID: {user?.uid}</p>
+    </VStack>
+  );
+}
+
 export default App;
-
-/*
-Installed = 'Installed',
-NotDetected = 'NotDetected',
-
-Loadable = 'Loadable',
-
-Unsupported = 'Unsupported',
-*/
-
-/*
-            {activeStep === 1 && (
-              <VStack>
-                <Button
-                  onClick={() => {
-                    //
-                    connect();
-                  }}
-                >
-                  {wallet?.readyState === "NotDetected"
-                    ? "Install Wallet"
-                    : "Connect Wallet"}
-                </Button>
-                {wallet?.readyState === "NotDetected" && (
-                  <Box p="4" borderRadius="8px">
-                    Wallet is not detected on your browser.
-                  </Box>
-                )}
-              </VStack>
-            )}
-            */

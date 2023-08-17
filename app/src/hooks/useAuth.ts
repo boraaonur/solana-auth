@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
 import { httpsCallable, getFunctions } from "firebase/functions";
-
 import { PublicKey } from "@solana/web3.js";
 import { WalletContextState } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
@@ -9,24 +8,54 @@ import {
   browserSessionPersistence,
   setPersistence,
   signInWithCustomToken,
+  AuthError,
 } from "firebase/auth";
 import { auth, functions } from "../lib/firebase";
+import {
+  ERR_WALLET_NOT_CONNECTED,
+  ERR_WALLET_NOT_SUPPORT_SIGNING,
+  ERR_NONCE_MISSING,
+  ERR_WALLET_BANNED,
+  ERR_GENERIC,
+} from "../constants/errors";
 
 async function getNonceForPublicKey(publicKey: PublicKey) {
-  if (!publicKey) throw new Error("Wallet not connected!");
+  if (!publicKey) throw new Error(ERR_WALLET_NOT_CONNECTED);
 
+  const getNonceCallable = httpsCallable(functions, "getNonce");
   try {
-    const getNonceCallable = httpsCallable(functions, "getNonce");
-    return await getNonceCallable({ publicKey: publicKey.toBase58() }).then(
-      (result) => {
-        const data = result.data as { nonce: string };
-        return data.nonce;
-      }
-    );
+    const result = await getNonceCallable({ publicKey: publicKey.toBase58() });
+    const data = result.data as { nonce: string };
+    return data.nonce;
   } catch (error) {
     console.error("Error getting nonce:", error);
     return null;
   }
+}
+
+async function attemptAuthentication(
+  wallet: WalletContextState,
+  nonce: string
+) {
+  if (!wallet.publicKey) throw new Error("Wallet not connected!");
+  if (!wallet.signMessage)
+    throw new Error("Wallet does not support message signing!");
+
+  const message = `Sign this message for authenticating with your wallet. Nonce: ${nonce}`;
+  const encodedMessage = new TextEncoder().encode(message);
+  const signature = bs58.encode(await wallet.signMessage(encodedMessage));
+  const verify = httpsCallable(getFunctions(), "authenticate");
+
+  const result = await verify({
+    publicKey: wallet.publicKey.toBase58(),
+    signature: signature,
+  });
+
+  const data = result.data as { token: string };
+
+  await setPersistence(auth, browserSessionPersistence);
+  const credentials = await signInWithCustomToken(auth, data.token);
+  return credentials.user;
 }
 
 export function useAuth() {
@@ -34,54 +63,32 @@ export function useAuth() {
   const [authenticating, setAuthenticating] = useState(false);
 
   useEffect(() => {
-    auth.onAuthStateChanged((user) => {
-      setUser(user);
-    });
+    const unsubscribe = auth.onAuthStateChanged(setUser);
+    return () => unsubscribe();
   }, []);
 
   const authenticate = useCallback(async (wallet: WalletContextState) => {
-    if (!wallet.publicKey) throw new Error("Wallet not connected!");
-    if (!wallet.signMessage)
-      throw new Error("Wallet does not support message signing!");
+    if (!wallet.publicKey) throw new Error(ERR_WALLET_NOT_CONNECTED);
+    if (!wallet.signMessage) throw new Error(ERR_WALLET_NOT_SUPPORT_SIGNING);
 
     const nonce = await getNonceForPublicKey(wallet.publicKey);
 
-    if (!nonce) throw new Error("Could not get nonce");
-
-    const message = `Sign this message for authenticating with your wallet. Nonce: ${nonce}`;
-    const encodedMessage = new TextEncoder().encode(message);
-
-    const signature = await wallet
-      .signMessage(encodedMessage)
-      .then((result) => bs58.encode(result));
+    if (!nonce) throw new Error(ERR_NONCE_MISSING);
 
     setAuthenticating(true);
-    const functions = getFunctions();
-    const verify = httpsCallable(functions, "authenticate");
-    await verify({
-      publicKey: wallet.publicKey.toBase58(),
-      signature: signature,
-    })
-      .then(async (result) => {
-        const data = result.data as { token: string };
-        setPersistence(auth, browserSessionPersistence);
-        await signInWithCustomToken(auth, data.token)
-          .then((cred) => {
-            setUser(cred.user);
-          })
-          .catch((err) => {
-            if (err.code === "auth/user-disabled") {
-              throw new Error(
-                "It looks like this wallet is banned. If you think this is a mistake contact us in Discord."
-              );
-            } else {
-              throw new Error(
-                "Something went wrong. Close browser and try again. Contact us in Discord if issue persists."
-              );
-            }
-          });
-      })
-      .finally(() => setAuthenticating(false));
+
+    try {
+      const authenticatedUser = await attemptAuthentication(wallet, nonce);
+      setUser(authenticatedUser);
+    } catch (err) {
+      if ((err as AuthError).code === "auth/user-disabled") {
+        throw new Error(ERR_WALLET_BANNED);
+      } else {
+        throw new Error(ERR_GENERIC);
+      }
+    } finally {
+      setAuthenticating(false);
+    }
   }, []);
 
   return {
