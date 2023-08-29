@@ -20,7 +20,9 @@ Before you start with this authentication template, make sure you've done the fo
 ### 4. AppEngine Permissions
 - Assign the "Service Account Token Creator" role to the default compute service account. If you prefer to use 1st gen cloud functions, you should assign the "Service Account Token Creator" role to AppEngine. 
 
-Note: In this demo, I used 2nd gen cloud functions. 
+In this demo, I used 2nd gen cloud functions. 
+
+**Important**: Make sure to replace the config in `lib/firebase.ts` with your own Firebase configuration.
 
 ---
 
